@@ -1,0 +1,40 @@
+FROM python:alpine
+
+ARG BUKU_VERSION
+ARG BUKU_DOWNLOAD_URL=https://github.com/jarun/buku/archive/v${BUKU_VERSION}.tar.gz
+
+RUN apk update \
+    apk upgrade --no-cache \
+    && wget --output-document=buku.tar.gz ${BUKU_DOWNLOAD_URL} \
+    && mkdir --parents /usr/src/buku \
+    && tar -xzf buku.tar.gz --directory=/usr/src/buku --strip-components=1 \
+    && rm buku.tar.gz \
+    && rm -rf /var/cache/apk/*
+
+ARG CRYPTOGRAPHY_DONT_BUILD_RUST=1
+
+RUN set -ex \
+  && apk add --no-cache --virtual .build-deps \
+    gcc \
+    openssl-dev \
+    musl-dev \
+    libffi-dev \
+  && pip install --upgrade --no-cache-dir \
+    pip \
+    gunicorn \
+    /usr/src/buku[server] \
+  && apk del .build-deps \
+  && rm -rf /usr/src/buku \
+  && rm -rf /var/cache/apk/*
+
+ENV BUKUSERVER_PORT=5001
+
+HEALTHCHECK --interval=1m --timeout=10s \
+  CMD nc -z localhost ${BUKUSERVER_PORT} || exit 1
+
+ENTRYPOINT gunicorn --bind 0.0.0.0:${BUKUSERVER_PORT} "bukuserver.server:create_app()"
+EXPOSE ${BUKUSERVER_PORT}
+
+#docker builder build --no-cache --build-arg BUKU_VERSION=4.5 --file Dockerfile.alpine --tag image-name:version .
+#docker volume create --driver local --name volume-name
+#docker container run --detach --mount source=volume-name,target=/root/.local/share/buku --publish 5001:5001 --name container-name image-name:version
